@@ -27,6 +27,7 @@ from io_simgeom.io.geom_export    import SIMGEOM_OT_export_geom
 from io_simgeom.io.geom_import    import SIMGEOM_OT_import_geom
 from io_simgeom.io.morph_import   import SIMGEOM_OT_import_morph
 from io_simgeom.io.rig_import     import SIMGEOM_OT_import_rig
+from io_simgeom.io.package_import import SIMGEOM_OT_import_package, SIMGEOM_OT_select_package_geoms
 from io_simgeom.ui                import SIMGEOM_PT_utility_panel
 from io_simgeom.operators         import *
 from io_simgeom.util.globals      import Globals
@@ -49,6 +50,8 @@ classes = [
     SIMGEOM_PT_utility_panel,
     SIMGEOM_OT_import_rig,
     SIMGEOM_OT_import_geom,
+    SIMGEOM_OT_import_package,
+    SIMGEOM_OT_select_package_geoms,
     SIMGEOM_OT_export_geom,
     SIMGEOM_OT_import_rig_helper,
     SIMGEOM_OT_import_morph,
@@ -73,6 +76,7 @@ def check_version():
 
 # Only needed if you want to add into a dynamic menu
 def menu_func_import(self, context):
+    self.layout.operator(SIMGEOM_OT_import_package.bl_idname, text="Sims 4 Package (.package)")
     self.layout.operator(SIMGEOM_OT_import_geom.bl_idname, text="Sims 4 GEOM (.simgeom)")
     self.layout.operator(SIMGEOM_OT_import_morph.bl_idname, text="Sims 4 Morph (.simgeom)")
     self.layout.operator(SIMGEOM_OT_import_rig.bl_idname, text="Sims 4 Rig (.grannyrig)")

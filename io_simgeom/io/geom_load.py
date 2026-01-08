@@ -36,10 +36,14 @@ class GeomLoader:
 
     @staticmethod
     def readGeom(filepath: str) -> Geom:
-        geomdata = None
+        """Load GEOM from file path"""
         with open(filepath, "rb") as f:
             geomdata = f.read()
-
+        return GeomLoader.readGeomFromBytes(geomdata)
+    
+    @staticmethod
+    def readGeomFromBytes(geomdata: bytes) -> Geom:
+        """Load GEOM from raw bytes (used for package import)"""
         meshdata    = Geom()
         reader      = ByteReader(geomdata)
 

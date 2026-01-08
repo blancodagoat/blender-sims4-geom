@@ -6,6 +6,7 @@ This is a fork of [SmugTomato's Blender Sims 3 GEOM Tools](https://github.com/Sm
 
 ## Features
 
+- **Import directly from .package files** - No need for S4PE or other extraction tools!
 - **Import/Export Sims 4 SimGeom files** (.simgeom)
 - **Custom normals support** - preserves original mesh normals
 - **Multiple UV channels** - supports meshes with multiple UV maps
@@ -30,9 +31,22 @@ This add-on is installed like any other Blender add-on:
 
 ## Usage
 
-### Importing a GEOM
+### Importing from a Package File (Recommended)
 
-1. **File > Import > Sims 4 SimGeom (.simgeom)**
+The easiest way to get meshes - import directly from .package files:
+
+1. **File > Import > Sims 4 Package (.package)**
+2. Select your .package file (CC mod, extracted game files, etc.)
+3. The addon will automatically find and import all GEOM meshes
+4. Optionally select a rig to import alongside the meshes
+
+This supports both compressed and uncompressed package files - no external tools needed!
+
+### Importing a Standalone GEOM
+
+If you have an extracted .simgeom file:
+
+1. **File > Import > Sims 4 GEOM (.simgeom)**
 2. Select your .simgeom file
 3. Optionally select a rig to import alongside the mesh
 
@@ -109,6 +123,16 @@ If vertex groups show as hex values like `0xef89a3e3`:
 This only needs to be done once - bone names are saved to a JSON file.
 
 ## Technical Details
+
+### Package (DBPF) Format
+
+The addon includes a full Python implementation of EA's DBPF package format:
+
+- **DBPF Version 2.1** - Standard Sims 4 package format
+- **Compression Support**:
+  - DEFLATE/zlib (standard compression)
+  - RefPack (legacy EA compression)
+- **Resource Types**: Automatically identifies GEOM resources (type 0x015A1849)
 
 ### Sims 4 GEOM Format
 
