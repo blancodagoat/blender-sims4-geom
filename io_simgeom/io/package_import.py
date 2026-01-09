@@ -102,7 +102,7 @@ _current_package_path = ""
 
 
 class SIMGEOM_OT_import_package(Operator, ImportHelper):
-    """Import GEOM meshes from a Sims 4 .package file"""
+    """Import GEOM meshes from Sims 4 .package file(s)"""
     bl_idname = "simgeom.import_package"
     bl_label = "Import from .package"
     bl_options = {'REGISTER', 'UNDO'}
@@ -110,6 +110,10 @@ class SIMGEOM_OT_import_package(Operator, ImportHelper):
     # ImportHelper mixin class uses this
     filename_ext = ".package"
     filter_glob: StringProperty(default="*.package", options={'HIDDEN'})
+    
+    # Support multiple file selection
+    files: CollectionProperty(type=bpy.types.OperatorFileListElement)
+    directory: StringProperty(subtype='DIR_PATH')
 
     # Sims 4 rig options
     rig_type: EnumProperty(
@@ -149,45 +153,71 @@ class SIMGEOM_OT_import_package(Operator, ImportHelper):
         description="Auto-create materials from textures in the package",
         default=True
     )
+    
+    connect_normal_maps: BoolProperty(
+        name="Connect Normal Maps",
+        description="Auto-detect and connect RLES textures as normal maps",
+        default=True
+    )
 
     def execute(self, context):
         global _package_geoms, _current_package_path
         
-        # Load the package
-        package = PackageReader(self.filepath)
-        if not package.load():
-            self.report({'ERROR'}, "Failed to load package file")
-            return {'CANCELLED'}
+        # Build list of files to import
+        if self.files and len(self.files) > 0:
+            # Multiple files selected
+            filepaths = [os.path.join(self.directory, f.name) for f in self.files if f.name]
+        else:
+            # Single file
+            filepaths = [self.filepath]
         
-        # Find GEOM resources
-        geom_entries = package.get_geom_resources()
-        
-        if not geom_entries:
-            self.report({'WARNING'}, "No GEOM meshes found in this package")
-            return {'CANCELLED'}
-        
-        self.report({'INFO'}, f"Found {len(geom_entries)} GEOM(s) in package")
-        
-        # Import rig if requested
+        # Import rig once if requested (before all packages)
         if self.rig_type != 'None':
             rigpath = Globals.ROOTDIR + '/data/rigs/' + self.rig_type + '.grannyrig'
             if os.path.exists(rigpath):
                 bpy.ops.simgeom.import_rig(filepath=rigpath)
         
-        # Import GEOMs - either all LODs or just the highest quality
-        if self.import_all:
-            # Import all GEOMs including lower LODs
-            geoms_to_import = geom_entries
-            self.report({'INFO'}, f"Importing all {len(geoms_to_import)} GEOM(s)")
+        total_geoms = 0
+        total_packages = 0
+        
+        for filepath in filepaths:
+            if not filepath.lower().endswith('.package'):
+                continue
+                
+            # Load the package
+            package = PackageReader(filepath)
+            if not package.load():
+                self.report({'WARNING'}, f"Failed to load: {os.path.basename(filepath)}")
+                continue
+            
+            # Find GEOM resources
+            geom_entries = package.get_geom_resources()
+            
+            if not geom_entries:
+                self.report({'WARNING'}, f"No GEOMs in: {os.path.basename(filepath)}")
+                continue
+            
+            total_packages += 1
+            
+            # Import GEOMs - either all LODs or just the highest quality
+            if self.import_all:
+                geoms_to_import = geom_entries
+            else:
+                geoms_to_import = self._get_largest_geoms(package, geom_entries)
+            
+            # Store package path for texture reloading
+            _current_package_path = filepath
+            
+            for i, entry in enumerate(geoms_to_import):
+                if self._import_geom(context, package, entry, i):
+                    total_geoms += 1
+        
+        if total_geoms > 0:
+            self.report({'INFO'}, f"Imported {total_geoms} GEOM(s) from {total_packages} package(s)")
+            return {'FINISHED'}
         else:
-            # Find and import only the LARGEST GEOM (highest LOD) per unique mesh
-            geoms_to_import = self._get_largest_geoms(package, geom_entries)
-            self.report({'INFO'}, f"Importing {len(geoms_to_import)} highest-LOD GEOM(s)")
-        
-        for i, entry in enumerate(geoms_to_import):
-            self._import_geom(context, package, entry, i)
-        
-        return {'FINISHED'}
+            self.report({'ERROR'}, "No GEOMs could be imported")
+            return {'CANCELLED'}
     
     def _get_largest_geoms(self, package, geom_entries):
         """
@@ -337,8 +367,9 @@ class SIMGEOM_OT_import_package(Operator, ImportHelper):
         self._add_prop(obj, 'embedded_id', geomdata.embeddedID if geomdata.embeddedID else "0x0")
         self._add_prop(obj, 'vert_ids', ids)
         
-        # Store package instance ID for reference
+        # Store package info for reference and texture reloading
         self._add_prop(obj, 'package_instance', entry.instance_hex)
+        self._add_prop(obj, 'package_path', _current_package_path)
         
         start_id_descript = "Starting Vertex ID"
         for key, value in Globals.CAS_INDICES.items():
@@ -401,23 +432,24 @@ class SIMGEOM_OT_import_package(Operator, ImportHelper):
         print(f"    RLES (specular): {len(rles_textures)}")
         print(f"    DDS: {len(dds_textures)}")
         
-        # Get first specular texture (shared across diffuse materials)
-        specular_img = None
+        # Get first RLES texture (can be specular OR normal map)
+        # RLES format typically contains packed specular/normal data
+        rles_img = None
         if rles_textures:
-            spec_entry = rles_textures[0]
-            print(f"  Converting specular texture ({spec_entry.instance_hex})...")
-            spec_data = self._convert_rle_to_dds(package.get_resource_data(spec_entry))
-            if spec_data:
-                spec_filename = f"specular_{spec_entry.instance:016X}.dds"
-                spec_path = os.path.join(temp_dir, spec_filename)
+            rles_entry = rles_textures[0]
+            print(f"  Converting RLES texture ({rles_entry.instance_hex})...")
+            rles_data = self._convert_rle_to_dds(package.get_resource_data(rles_entry))
+            if rles_data:
+                rles_filename = f"rles_{rles_entry.instance:016X}.dds"
+                rles_path = os.path.join(temp_dir, rles_filename)
                 try:
-                    with open(spec_path, 'wb') as f:
-                        f.write(spec_data)
-                    specular_img = bpy.data.images.load(spec_path)
-                    specular_img.colorspace_settings.name = 'Non-Color'
-                    print(f"    Loaded specular texture")
+                    with open(rles_path, 'wb') as f:
+                        f.write(rles_data)
+                    rles_img = bpy.data.images.load(rles_path)
+                    rles_img.colorspace_settings.name = 'Non-Color'
+                    print(f"    Loaded RLES texture (specular/normal)")
                 except Exception as e:
-                    print(f"    Failed to load specular: {e}")
+                    print(f"    Failed to load RLES: {e}")
         
         # Create a material for EACH RLE2 (diffuse) texture
         for i, tex_entry in enumerate(rle2_textures):
@@ -470,18 +502,43 @@ class SIMGEOM_OT_import_package(Operator, ImportHelper):
             links.new(tex_node.outputs['Color'], bsdf_node.inputs['Base Color'])
             links.new(tex_node.outputs['Alpha'], bsdf_node.inputs['Alpha'])
             
-            # Add specular texture if available
-            if specular_img:
-                spec_node = nodes.new('ShaderNodeTexImage')
-                spec_node.location = (-400, 0)
-                spec_node.label = "Specular"
-                spec_node.image = specular_img
-                links.new(spec_node.outputs['Color'], bsdf_node.inputs['Specular IOR Level'])
+            # Add RLES texture (specular + normal map)
+            if rles_img:
+                # RLES texture node
+                rles_node = nodes.new('ShaderNodeTexImage')
+                rles_node.location = (-400, -50)
+                rles_node.label = "RLES (Spec/Normal)"
+                rles_node.image = rles_img
+                
+                # Connect to specular
+                links.new(rles_node.outputs['Color'], bsdf_node.inputs['Specular IOR Level'])
+                
+                # If normal map connection enabled, add normal map node
+                if self.connect_normal_maps:
+                    # Separate RGB to extract normal data from RLES
+                    separate_node = nodes.new('ShaderNodeSeparateColor')
+                    separate_node.location = (-200, -200)
+                    links.new(rles_node.outputs['Color'], separate_node.inputs['Color'])
+                    
+                    # Combine for normal map (R and G channels typically hold normal data)
+                    combine_node = nodes.new('ShaderNodeCombineColor')
+                    combine_node.location = (0, -200)
+                    links.new(separate_node.outputs['Red'], combine_node.inputs['Red'])
+                    links.new(separate_node.outputs['Green'], combine_node.inputs['Green'])
+                    # Blue channel set to 1.0 for reconstructed normal
+                    combine_node.inputs['Blue'].default_value = 1.0
+                    
+                    # Normal map node
+                    normal_node = nodes.new('ShaderNodeNormalMap')
+                    normal_node.location = (200, -200)
+                    normal_node.space = 'TANGENT'
+                    links.new(combine_node.outputs['Color'], normal_node.inputs['Color'])
+                    links.new(normal_node.outputs['Normal'], bsdf_node.inputs['Normal'])
             
             materials.append(mat)
             print(f"    Created material: {mat_name}")
         
-        # Create materials for additional specular textures (if more than 1)
+        # Create materials for additional RLES textures (if more than 1)
         for i, tex_entry in enumerate(rles_textures[1:], start=2):
             print(f"  Converting RLES texture {i}/{len(rles_textures)} ({tex_entry.instance_hex})...")
             tex_data = self._convert_rle_to_dds(package.get_resource_data(tex_entry))
@@ -489,7 +546,7 @@ class SIMGEOM_OT_import_package(Operator, ImportHelper):
                 print(f"    Failed to convert")
                 continue
             
-            dds_filename = f"specular_{tex_entry.instance:016X}.dds"
+            dds_filename = f"rles_{tex_entry.instance:016X}.dds"
             dds_path = os.path.join(temp_dir, dds_filename)
             
             try:
@@ -501,8 +558,8 @@ class SIMGEOM_OT_import_package(Operator, ImportHelper):
                 print(f"    Failed to load: {e}")
                 continue
             
-            # Create material for this specular texture
-            mat_name = f"Specular_{i}_{tex_entry.instance:08X}"
+            # Create material for this RLES texture
+            mat_name = f"RLES_{i}_{tex_entry.instance:08X}"
             mat = bpy.data.materials.new(name=mat_name)
             mat.use_nodes = True
             nodes = mat.node_tree.nodes
@@ -516,11 +573,28 @@ class SIMGEOM_OT_import_package(Operator, ImportHelper):
             bsdf_node.location = (0, 0)
             links.new(bsdf_node.outputs['BSDF'], output_node.inputs['Surface'])
             
-            spec_node = nodes.new('ShaderNodeTexImage')
-            spec_node.location = (-400, 0)
-            spec_node.label = "Specular"
-            spec_node.image = img
-            links.new(spec_node.outputs['Color'], bsdf_node.inputs['Specular IOR Level'])
+            rles_tex_node = nodes.new('ShaderNodeTexImage')
+            rles_tex_node.location = (-400, 0)
+            rles_tex_node.label = "RLES (Spec/Normal)"
+            rles_tex_node.image = img
+            links.new(rles_tex_node.outputs['Color'], bsdf_node.inputs['Specular IOR Level'])
+            
+            # Add normal map if enabled
+            if self.connect_normal_maps:
+                separate_node = nodes.new('ShaderNodeSeparateColor')
+                separate_node.location = (-200, -150)
+                links.new(rles_tex_node.outputs['Color'], separate_node.inputs['Color'])
+                
+                combine_node = nodes.new('ShaderNodeCombineColor')
+                combine_node.location = (0, -150)
+                links.new(separate_node.outputs['Red'], combine_node.inputs['Red'])
+                links.new(separate_node.outputs['Green'], combine_node.inputs['Green'])
+                combine_node.inputs['Blue'].default_value = 1.0
+                
+                normal_node = nodes.new('ShaderNodeNormalMap')
+                normal_node.location = (200, -150)
+                links.new(combine_node.outputs['Color'], normal_node.inputs['Color'])
+                links.new(normal_node.outputs['Normal'], bsdf_node.inputs['Normal'])
             
             materials.append(mat)
             print(f"    Created material: {mat_name}")
@@ -820,6 +894,264 @@ class SIMGEOM_OT_select_package_geoms(Operator):
         for i, entry in enumerate(_package_geoms):
             row = box.row()
             row.label(text=f"GEOM {i+1}: {entry.instance_hex}")
+
+
+class SIMGEOM_OT_reload_textures(Operator):
+    """Reload textures from the source .package file"""
+    bl_idname = "simgeom.reload_textures"
+    bl_label = "Reload Textures"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    @classmethod
+    def poll(cls, context):
+        obj = context.active_object
+        return obj is not None and obj.get('package_path')
+    
+    def execute(self, context):
+        obj = context.active_object
+        package_path = obj.get('package_path')
+        
+        if not package_path or not os.path.exists(package_path):
+            self.report({'ERROR'}, "Source package not found")
+            return {'CANCELLED'}
+        
+        # Load package
+        package = PackageReader(package_path)
+        if not package.load():
+            self.report({'ERROR'}, "Failed to load package")
+            return {'CANCELLED'}
+        
+        # Get RLE textures
+        rle_resources = package.get_rle_resources()
+        dds_resources = package.get_dds_resources()
+        
+        if not rle_resources and not dds_resources:
+            self.report({'WARNING'}, "No textures found in package")
+            return {'CANCELLED'}
+        
+        # Create temp directory
+        temp_dir = tempfile.mkdtemp(prefix="simgeom_reload_")
+        reloaded = 0
+        
+        # Reload each texture that exists in the material
+        for mat in obj.data.materials:
+            if not mat or not mat.use_nodes:
+                continue
+            
+            for node in mat.node_tree.nodes:
+                if node.type != 'TEX_IMAGE' or not node.image:
+                    continue
+                
+                # Extract instance ID from image name
+                img_name = node.image.name
+                for tex_entry in rle_resources + dds_resources:
+                    if f"{tex_entry.instance:016X}" in img_name or f"{tex_entry.instance:08X}" in img_name:
+                        # Found matching texture, reload it
+                        tex_data = package.get_resource_data(tex_entry)
+                        if tex_entry.resource_type in (RLE2_TYPE, RLES_TYPE):
+                            tex_data = self._convert_rle_to_dds(tex_data)
+                        
+                        if tex_data:
+                            dds_path = os.path.join(temp_dir, f"reload_{tex_entry.instance:016X}.dds")
+                            with open(dds_path, 'wb') as f:
+                                f.write(tex_data)
+                            
+                            # Reload the image
+                            node.image.filepath = dds_path
+                            node.image.reload()
+                            reloaded += 1
+                        break
+        
+        self.report({'INFO'}, f"Reloaded {reloaded} texture(s)")
+        return {'FINISHED'}
+    
+    def _convert_rle_to_dds(self, rle_data):
+        """Convert RLE to DDS"""
+        if not rle_data or len(rle_data) < 16:
+            return None
+        
+        if _init_s4pi():
+            try:
+                import clr
+                from System.IO import MemoryStream
+                ms_in = MemoryStream(rle_data)
+                rle_res = _RLEResource(0, ms_in)
+                ms_out = MemoryStream()
+                rle_res.ToDDS().CopyTo(ms_out)
+                return bytes(ms_out.ToArray())
+            except:
+                pass
+        
+        # Fall back to manual (simplified version)
+        return None
+
+
+class SIMGEOM_OT_batch_export_geom(Operator):
+    """Export all selected meshes as separate GEOM files"""
+    bl_idname = "simgeom.batch_export_geom"
+    bl_label = "Batch Export GEOMs"
+    bl_options = {'REGISTER'}
+    
+    directory: StringProperty(
+        name="Output Directory",
+        description="Folder to save exported GEOM files",
+        subtype='DIR_PATH'
+    )
+    
+    def invoke(self, context, event):
+        context.window_manager.fileselect_add(self)
+        return {'RUNNING_MODAL'}
+    
+    def execute(self, context):
+        # Get selected GEOM meshes
+        selected = [obj for obj in context.selected_objects 
+                   if obj.type == 'MESH' and obj.get('__S4_GEOM__')]
+        
+        if not selected:
+            self.report({'ERROR'}, "No GEOM meshes selected")
+            return {'CANCELLED'}
+        
+        output_dir = bpy.path.abspath(self.directory)
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+        
+        exported = 0
+        for obj in selected:
+            # Generate filename from object name
+            filename = f"{obj.name}.simgeom"
+            filepath = os.path.join(output_dir, filename)
+            
+            # Use existing export operator
+            try:
+                # Store current selection
+                bpy.ops.object.select_all(action='DESELECT')
+                obj.select_set(True)
+                context.view_layer.objects.active = obj
+                
+                bpy.ops.simgeom.export_geom(filepath=filepath)
+                exported += 1
+            except Exception as e:
+                print(f"Failed to export {obj.name}: {e}")
+        
+        self.report({'INFO'}, f"Exported {exported} GEOM(s) to {output_dir}")
+        return {'FINISHED'}
+
+
+class SIMGEOM_OT_generate_lods(Operator):
+    """Generate LOD versions of the selected mesh using decimation"""
+    bl_idname = "simgeom.generate_lods"
+    bl_label = "Generate LODs"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    lod_count: bpy.props.IntProperty(
+        name="LOD Count",
+        description="Number of LOD levels to generate",
+        default=3,
+        min=1,
+        max=5
+    )
+    
+    lod1_ratio: bpy.props.FloatProperty(
+        name="LOD1 Ratio",
+        description="Decimation ratio for LOD1",
+        default=0.5,
+        min=0.1,
+        max=0.9
+    )
+    
+    lod2_ratio: bpy.props.FloatProperty(
+        name="LOD2 Ratio",
+        description="Decimation ratio for LOD2",
+        default=0.25,
+        min=0.05,
+        max=0.8
+    )
+    
+    lod3_ratio: bpy.props.FloatProperty(
+        name="LOD3 Ratio",
+        description="Decimation ratio for LOD3",
+        default=0.1,
+        min=0.01,
+        max=0.5
+    )
+    
+    export_after: bpy.props.BoolProperty(
+        name="Export After Generation",
+        description="Automatically export all LODs after generation",
+        default=False
+    )
+    
+    @classmethod
+    def poll(cls, context):
+        obj = context.active_object
+        return obj is not None and obj.type == 'MESH' and obj.get('__S4_GEOM__')
+    
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self, width=300)
+    
+    def draw(self, context):
+        layout = self.layout
+        layout.prop(self, "lod_count")
+        
+        col = layout.column(align=True)
+        col.label(text="Decimation Ratios:")
+        if self.lod_count >= 1:
+            col.prop(self, "lod1_ratio")
+        if self.lod_count >= 2:
+            col.prop(self, "lod2_ratio")
+        if self.lod_count >= 3:
+            col.prop(self, "lod3_ratio")
+        
+        layout.separator()
+        layout.prop(self, "export_after")
+    
+    def execute(self, context):
+        source_obj = context.active_object
+        source_name = source_obj.name
+        
+        ratios = [self.lod1_ratio, self.lod2_ratio, self.lod3_ratio, 0.05, 0.02]
+        created_lods = []
+        
+        for lod_level in range(self.lod_count):
+            ratio = ratios[lod_level]
+            
+            # Duplicate the source mesh
+            bpy.ops.object.select_all(action='DESELECT')
+            source_obj.select_set(True)
+            context.view_layer.objects.active = source_obj
+            bpy.ops.object.duplicate()
+            
+            lod_obj = context.active_object
+            lod_obj.name = f"{source_name}_LOD{lod_level + 1}"
+            
+            # Add decimate modifier
+            decimate = lod_obj.modifiers.new(name="LOD_Decimate", type='DECIMATE')
+            decimate.ratio = ratio
+            decimate.use_collapse_triangulate = True
+            
+            # Apply the modifier
+            bpy.ops.object.modifier_apply(modifier="LOD_Decimate")
+            
+            # Copy GEOM properties from source
+            for key in source_obj.keys():
+                if key.startswith('_'):
+                    continue
+                lod_obj[key] = source_obj[key]
+            
+            created_lods.append(lod_obj)
+            
+            # Move LOD below source in outliner (offset position)
+            lod_obj.location.x += (lod_level + 1) * 2
+        
+        # Select all created LODs
+        bpy.ops.object.select_all(action='DESELECT')
+        for obj in created_lods:
+            obj.select_set(True)
+        source_obj.select_set(True)
+        context.view_layer.objects.active = source_obj
+        
+        self.report({'INFO'}, f"Generated {len(created_lods)} LOD(s)")
+        return {'FINISHED'}
 
 
 class SIMGEOM_OT_export_rle_textures(Operator, ImportHelper):

@@ -27,8 +27,21 @@ from io_simgeom.io.geom_export    import SIMGEOM_OT_export_geom
 from io_simgeom.io.geom_import    import SIMGEOM_OT_import_geom
 from io_simgeom.io.morph_import   import SIMGEOM_OT_import_morph
 from io_simgeom.io.rig_import     import SIMGEOM_OT_import_rig
-from io_simgeom.io.package_import import SIMGEOM_OT_import_package, SIMGEOM_OT_select_package_geoms, SIMGEOM_OT_export_rle_textures
-from io_simgeom.ui                import SIMGEOM_PT_utility_panel
+from io_simgeom.io.package_import import (
+    SIMGEOM_OT_import_package,
+    SIMGEOM_OT_select_package_geoms,
+    SIMGEOM_OT_export_rle_textures,
+    SIMGEOM_OT_reload_textures,
+    SIMGEOM_OT_batch_export_geom,
+    SIMGEOM_OT_generate_lods
+)
+from io_simgeom.ui                import (
+    SIMGEOM_PT_utility_panel,
+    SIMGEOM_PT_sidebar_panel,
+    SIMGEOM_PT_sidebar_textures,
+    SIMGEOM_PT_sidebar_vertex_ids,
+    register_rig_enum
+)
 from io_simgeom.operators         import *
 from io_simgeom.util.globals      import Globals
 
@@ -42,20 +55,30 @@ bl_info = {
     "category": "Import-Export",
     "version": (3, 0, 0),
     "blender": (2, 80, 0),
-    "location": "File > Import/Export",
-    "description": "Importer and exporter for Sims 4 GEOM (.simgeom) files"
+    "location": "3D View > Sidebar > Sims 4",
+    "description": "Importer and exporter for Sims 4 GEOM and Package files"
 }
 
 classes = [
+    # Panels
+    SIMGEOM_PT_sidebar_panel,
+    SIMGEOM_PT_sidebar_textures,
+    SIMGEOM_PT_sidebar_vertex_ids,
     SIMGEOM_PT_utility_panel,
+    # Operators - Import
     SIMGEOM_OT_import_rig,
     SIMGEOM_OT_import_geom,
     SIMGEOM_OT_import_package,
     SIMGEOM_OT_select_package_geoms,
-    SIMGEOM_OT_export_rle_textures,
-    SIMGEOM_OT_export_geom,
-    SIMGEOM_OT_import_rig_helper,
     SIMGEOM_OT_import_morph,
+    # Operators - Export
+    SIMGEOM_OT_export_geom,
+    SIMGEOM_OT_export_rle_textures,
+    SIMGEOM_OT_batch_export_geom,
+    SIMGEOM_OT_generate_lods,
+    # Operators - Utility
+    SIMGEOM_OT_import_rig_helper,
+    SIMGEOM_OT_reload_textures,
     SIMGEOM_OT_rebuild_bone_database,
     SIMGEOM_OT_rename_bone_groups,
     SIMGEOM_OT_reset_id_margin,
@@ -75,20 +98,19 @@ def check_version():
     return CHECK_UPDATED
 
 
-# Only needed if you want to add into a dynamic menu
+# File menu entries (minimal - main UI is in N-Panel)
 def menu_func_import(self, context):
     self.layout.operator(SIMGEOM_OT_import_package.bl_idname, text="Sims 4 Package (.package)")
-    self.layout.operator(SIMGEOM_OT_import_geom.bl_idname, text="Sims 4 GEOM (.simgeom)")
-    self.layout.operator(SIMGEOM_OT_import_morph.bl_idname, text="Sims 4 Morph (.simgeom)")
-    self.layout.operator(SIMGEOM_OT_import_rig.bl_idname, text="Sims 4 Rig (.grannyrig)")
 
 
 def menu_func_export(self, context):
     self.layout.operator(SIMGEOM_OT_export_geom.bl_idname, text="Sims 4 GEOM (.simgeom)")
-    self.layout.operator(SIMGEOM_OT_export_rle_textures.bl_idname, text="Sims 4 Textures (RLE → DDS)")
 
 
 def register():
+    # Register rig type enum
+    register_rig_enum()
+    
     for item in classes:
         bpy.utils.register_class(item)
     bpy.types.TOPBAR_MT_file_import.append(menu_func_import)
@@ -130,6 +152,7 @@ def unregister():
 
     del bpy.types.Object.morph_link
     del bpy.types.Object.morph_name
+    del bpy.types.Scene.simgeom_rig_type
 
 
 if __name__ == "__main__":

@@ -248,6 +248,38 @@ The addon includes a pure Python RLE decompressor:
 | Sims 4 GEOM (.simgeom) | Export mesh as GEOM file |
 | Sims 4 Textures (RLE → DDS) | Extract textures from package to DDS |
 
+## Reporting Bugs
+
+If you encounter any issues, please include the **console output** when reporting:
+
+### How to Open the Console
+
+**Windows:**
+1. Go to **Window > Toggle System Console**
+2. A black console window will appear showing debug output
+
+**macOS:**
+1. Open Terminal app
+2. Navigate to Blender: `/Applications/Blender.app/Contents/MacOS/Blender`
+3. Run Blender from Terminal to see console output
+
+**Linux:**
+1. Run Blender from a terminal window
+2. Console output appears in the terminal
+
+### What to Include in Bug Reports
+
+1. **Full console output** - Copy everything from the console after the error occurs
+2. **Blender version** (Help > About Blender)
+3. **Operating system**
+4. **Steps to reproduce** the issue
+5. **The .package file** (if possible) that caused the error
+
+The console shows detailed debug info like:
+- GEOM version and structure details
+- Texture conversion progress
+- Specific error messages and line numbers
+
 ## Credits
 
 - **[SmugTomato](https://github.com/SmugTomato)** - Original Sims 3 GEOM Tools
