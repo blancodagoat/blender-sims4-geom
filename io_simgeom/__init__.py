@@ -43,21 +43,64 @@ from io_simgeom.ui                import (
     register_rig_enum
 )
 from io_simgeom.operators         import *
+
+
+class SIMGEOM_OT_check_updates(bpy.types.Operator):
+    """Check for addon updates on GitHub"""
+    bl_idname = "simgeom.check_updates"
+    bl_label = "Check for Updates"
+    
+    def execute(self, context):
+        # Run synchronous check
+        try:
+            req = Request(
+                GITHUB_API_URL,
+                headers={'User-Agent': 'Blender-Sims4-GEOM-Addon'}
+            )
+            response = urlopen(req, timeout=10)
+            data = json.loads(response.read().decode('utf-8'))
+            
+            latest_tag = data.get('tag_name', '')
+            latest_version = parse_version(latest_tag)
+            current_version = bl_info['version']
+            
+            Globals.CURRENT_VERSION = current_version
+            Globals.LATEST_VERSION = latest_version
+            Globals.LATEST_VERSION_STR = latest_tag
+            Globals.UPDATE_URL = data.get('html_url', f'https://github.com/{GITHUB_REPO}/releases/latest')
+            
+            if latest_version > current_version:
+                Globals.OUTDATED = CHECK_OUTDATED
+                self.report({'INFO'}, f"Update available: {latest_tag}")
+            else:
+                Globals.OUTDATED = CHECK_UPDATED
+                self.report({'INFO'}, f"You have the latest version (v{'.'.join(map(str, current_version))})")
+                
+        except Exception as e:
+            Globals.OUTDATED = CHECK_FAILED
+            self.report({'WARNING'}, f"Update check failed: {e}")
+        
+        return {'FINISHED'}
 from io_simgeom.util.globals      import Globals
 
 from urllib.request import urlopen, Request
 from urllib.error import URLError
 import json
+import threading
 
 bl_info = {
     "name": "Sims 4 GEOM Tools",
     "author": "SmugTomato (updated for TS4)",
     "category": "Import-Export",
-    "version": (3, 0, 0),
+    "version": (3, 1, 0),
     "blender": (2, 80, 0),
     "location": "3D View > Sidebar > Sims 4",
     "description": "Importer and exporter for Sims 4 GEOM and Package files"
 }
+
+# GitHub repository for update checks
+GITHUB_REPO = "blancodagoat/blender-sims4-geom"
+GITHUB_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 
 classes = [
     # Panels
@@ -79,6 +122,7 @@ classes = [
     # Operators - Utility
     SIMGEOM_OT_import_rig_helper,
     SIMGEOM_OT_reload_textures,
+    SIMGEOM_OT_check_updates,
     SIMGEOM_OT_rebuild_bone_database,
     SIMGEOM_OT_rename_bone_groups,
     SIMGEOM_OT_reset_id_margin,
@@ -93,9 +137,59 @@ CHECK_UPDATED = 0
 CHECK_OUTDATED = 1
 
 
+def parse_version(version_str: str) -> tuple:
+    """Parse version string like 'v3.1.0' or '3.1.0' into tuple (3, 1, 0)"""
+    try:
+        # Remove 'v' prefix if present
+        version_str = version_str.lstrip('vV')
+        parts = version_str.split('.')
+        return tuple(int(p) for p in parts[:3])
+    except:
+        return (0, 0, 0)
+
+
+def check_version_async():
+    """Check for updates in background thread"""
+    try:
+        req = Request(
+            GITHUB_API_URL,
+            headers={'User-Agent': 'Blender-Sims4-GEOM-Addon'}
+        )
+        response = urlopen(req, timeout=5)
+        data = json.loads(response.read().decode('utf-8'))
+        
+        latest_tag = data.get('tag_name', '')
+        latest_version = parse_version(latest_tag)
+        current_version = bl_info['version']
+        
+        # Store in Globals
+        Globals.CURRENT_VERSION = current_version
+        Globals.LATEST_VERSION = latest_version
+        Globals.LATEST_VERSION_STR = latest_tag
+        Globals.UPDATE_URL = data.get('html_url', f'https://github.com/{GITHUB_REPO}/releases/latest')
+        
+        # Compare versions
+        if latest_version > current_version:
+            Globals.OUTDATED = CHECK_OUTDATED
+            print(f"[Sims 4 GEOM Tools] Update available: {latest_tag} (current: v{'.'.join(map(str, current_version))})")
+        else:
+            Globals.OUTDATED = CHECK_UPDATED
+            
+    except Exception as e:
+        print(f"[Sims 4 GEOM Tools] Update check failed: {e}")
+        Globals.OUTDATED = CHECK_FAILED
+
+
 def check_version():
-    # Version checking disabled for this fork
-    return CHECK_UPDATED
+    """Start async version check and return current state"""
+    # Store current version
+    Globals.CURRENT_VERSION = bl_info['version']
+    
+    # Start background check (non-blocking)
+    thread = threading.Thread(target=check_version_async, daemon=True)
+    thread.start()
+    
+    return CHECK_UPDATED  # Return updated initially, async will update Globals
 
 
 # File menu entries (minimal - main UI is in N-Panel)

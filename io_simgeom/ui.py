@@ -58,7 +58,18 @@ class SIMGEOM_PT_sidebar_panel(bpy.types.Panel):
         # Update notification
         if Globals.OUTDATED == 1:
             box = layout.box()
-            box.operator("wm.url_open", text="Update Available", icon='URL').url = "https://modthesims.info/"
+            box.alert = True
+            col = box.column(align=True)
+            col.label(text="Update Available!", icon='INFO')
+            current = '.'.join(map(str, Globals.CURRENT_VERSION))
+            latest = Globals.LATEST_VERSION_STR or '.'.join(map(str, Globals.LATEST_VERSION))
+            col.label(text=f"v{current} -> {latest}")
+            col.operator("wm.url_open", text="Download Update", icon='IMPORT').url = Globals.UPDATE_URL
+        elif Globals.OUTDATED == -1:
+            box = layout.box()
+            col = box.column(align=True)
+            col.label(text="Update check failed", icon='ERROR')
+            col.operator("simgeom.check_updates", text="Retry", icon='FILE_REFRESH')
 
         # Import Section
         box = layout.box()
@@ -221,5 +232,12 @@ class SIMGEOM_PT_utility_panel(bpy.types.Panel):
         layout = self.layout
         layout.label(text="Use the Sims 4 tab in the N-Panel (3D View)")
         layout.label(text="Press N in 3D View to open sidebar")
+        
+        layout.separator()
+        
+        # Version info
+        current = '.'.join(map(str, Globals.CURRENT_VERSION)) if Globals.CURRENT_VERSION else "?"
+        layout.label(text=f"Version: v{current}")
+        layout.operator("simgeom.check_updates", icon='URL')
     
 
