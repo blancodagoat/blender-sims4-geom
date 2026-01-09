@@ -1,0 +1,49 @@
+name: Create Release
+
+on:
+  push:
+    tags:
+      - 'v*'  # Triggers on version tags like v3.2.0
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Get version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+      
+      - name: Create addon zip
+        run: |
+          zip -r sims4-geom-tools-${{ steps.version.outputs.VERSION }}.zip io_simgeom/
+      
+      - name: Generate changelog
+        id: changelog
+        run: |
+          echo "CHANGELOG<<EOF" >> $GITHUB_OUTPUT
+          echo "## Changes in ${{ steps.version.outputs.VERSION }}" >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
+          echo "See [commit history](https://github.com/${{ github.repository }}/commits/${{ steps.version.outputs.VERSION }}) for details." >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
+          echo "### Installation" >> $GITHUB_OUTPUT
+          echo "1. Download \`sims4-geom-tools-${{ steps.version.outputs.VERSION }}.zip\`" >> $GITHUB_OUTPUT
+          echo "2. In Blender: Edit > Preferences > Add-ons > Install" >> $GITHUB_OUTPUT
+          echo "3. Select the downloaded zip file" >> $GITHUB_OUTPUT
+          echo "4. Enable 'Sims 4 GEOM Tools'" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+      
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: ${{ steps.version.outputs.VERSION }}
+          body: ${{ steps.changelog.outputs.CHANGELOG }}
+          files: sims4-geom-tools-${{ steps.version.outputs.VERSION }}.zip
+          draft: false
+          prerelease: false

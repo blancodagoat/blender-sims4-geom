@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Blender
+*.blend1
+*.blend2
+
+# External tools - do not include
+Sollumz-main/
+Sims4Tools-master/
+blender-manual/
+s4pe/
+
+# Build artifacts
+*.zip
+build/
+dist/
