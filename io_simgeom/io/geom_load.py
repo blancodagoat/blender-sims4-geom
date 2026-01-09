@@ -36,10 +36,14 @@ class GeomLoader:
 
     @staticmethod
     def readGeom(filepath: str) -> Geom:
-        geomdata = None
+        """Load GEOM from file path"""
         with open(filepath, "rb") as f:
             geomdata = f.read()
-
+        return GeomLoader.readGeomFromBytes(geomdata)
+    
+    @staticmethod
+    def readGeomFromBytes(geomdata: bytes) -> Geom:
+        """Load GEOM from raw bytes (used for package import)"""
         meshdata    = Geom()
         reader      = ByteReader(geomdata)
 
@@ -79,9 +83,12 @@ class GeomLoader:
         meshdata.version = reader.getUint32()
         print(f"GEOM version: {meshdata.version}")
         
-        # TGI offset (relative) and size
+        # TGI offset (relative to current position) and size
+        tgi_offset_pos = reader.getOffset()
         tgi_offset = reader.getUint32()
         tgi_size = reader.getUint32()
+        # Calculate absolute TGI position (offset is relative to position after reading it)
+        absolute_tgi_pos = tgi_offset_pos + 4 + tgi_offset  # +4 for the uint32 we just read
         print(f"TGI offset: {tgi_offset}, size: {tgi_size}")
         
         # Embedded shader ID
@@ -90,6 +97,7 @@ class GeomLoader:
         print(f"Embedded shader ID: {meshdata.embeddedID}")
         
         meshdata.shaderdata = []
+        meshdata.texture_refs = {}  # Maps texture type to TGI index
         if _embeddedID != 0:
             meshdata.embeddedID = Globals.get_shader_name(_embeddedID)
             
@@ -97,9 +105,12 @@ class GeomLoader:
             mtnf_size = reader.getUint32()
             print(f"MTNF block size: {mtnf_size}")
             
-            # Skip the entire MTNF block content
+            # Parse MTNF shader data to extract texture references
             if mtnf_size > 0:
-                reader.skip(mtnf_size)
+                mtnf_start = reader.getOffset()
+                meshdata.texture_refs = GeomLoader.parseMTNF(reader, mtnf_start, mtnf_size)
+                # Ensure we're at the end of MTNF block
+                reader.setOffset(mtnf_start + mtnf_size)
             
             print(f"Offset after MTNF: {reader.getOffset()}")
         
@@ -122,40 +133,88 @@ class GeomLoader:
         print(f"Offset after faces: {reader.getOffset()}, Faces: {len(meshdata.faces)}")
         
         # TS4 additional data sections (after faces)
-        # UVStitch data
+        # UVStitch data (UnknownThingList in s4pi)
+        # Structure per entry: index (uint32) + Vector2List (count + count * 2 floats)
         uvstitch_count = reader.getUint32()
         print(f"UVStitch count: {uvstitch_count}")
         for _ in range(uvstitch_count):
-            reader.skip(4)  # Index
-            uv_count = reader.getUint32()
-            reader.skip(uv_count * 8)  # UV pairs (2 floats each)
+            reader.skip(4)  # Index (uint32)
+            uv_count = reader.getUint32()  # Vector2List count
+            reader.skip(uv_count * 8)  # UV pairs (2 floats = 8 bytes each)
         
-        # SeamStitch data
+        # For version 14+, SeamStitch and SlotrayIntersection appear to use
+        # fixed-size entries similar to s4pi's UnknownThing2 (53 bytes each)
+        # but stored as separate lists
+        
+        # SeamStitch data - FIXED 53 bytes per entry (s4pi comment mentions this size)
         seamstitch_count = reader.getUint32()
-        print(f"SeamStitch count: {seamstitch_count}")
-        for _ in range(seamstitch_count):
-            reader.skip(4)  # Index
-            seam_count = reader.getUint32()
-            reader.skip(seam_count * 4)  # float values
+        print(f"SeamStitch count: {seamstitch_count}, offset: {reader.getOffset()}")
+        SEAMSTITCH_ENTRY_SIZE = 53  # Based on s4pi UnknownThing2 comment
+        seamstitch_bytes = seamstitch_count * SEAMSTITCH_ENTRY_SIZE
         
-        # SlotrayIntersection data
-        slotray_count = reader.getUint32()
-        print(f"Slotray count: {slotray_count}")
-        reader.skip(slotray_count * 4)  # uint32 indices
+        overflow_detected = False
+        # Sanity check: don't skip past TGI position
+        if reader.getOffset() + seamstitch_bytes < absolute_tgi_pos:
+            reader.skip(seamstitch_bytes)
+        else:
+            print(f"  WARNING: SeamStitch would overflow, seeking to TGI-based position")
+            overflow_detected = True
+        
+        if not overflow_detected:
+            # SlotrayIntersection data - also FIXED 53 bytes per entry
+            slotray_count = reader.getUint32()
+            print(f"Slotray count: {slotray_count}, offset: {reader.getOffset()}")
+            SLOTRAY_ENTRY_SIZE = 53
+            slotray_bytes = slotray_count * SLOTRAY_ENTRY_SIZE
+            if reader.getOffset() + slotray_bytes < absolute_tgi_pos:
+                reader.skip(slotray_bytes)
+            else:
+                print(f"  WARNING: Slotray would overflow, seeking to TGI position")
+                overflow_detected = True
+        
+        # If overflow was detected, seek backwards from TGI to find bone data
+        if overflow_detected:
+            # Bones are right before TGI. We need to find where bone data starts.
+            # Structure: bone_count (4 bytes) + bone_hashes (count * 4 bytes)
+            # Since we don't know the count, we'll try to estimate or skip bones
+            # For safety, seek to slightly before TGI and try to read bone count
+            # The minimum space is 4 bytes (count) + TGI count (4 bytes)
+            estimated_bone_pos = absolute_tgi_pos - 8  # Minimal: just bone count + tgi count
+            if estimated_bone_pos > reader.getOffset():
+                # Try to find bone data by scanning backwards from TGI
+                # For now, just skip to TGI position - bones will be empty
+                print(f"  Seeking to TGI position {absolute_tgi_pos}, skipping bone data")
+                reader.setOffset(absolute_tgi_pos)
         
         print(f"Offset before bones: {reader.getOffset()}")
         
         # Bones (TS4 doesn't have skin_controller_index before bones)
         meshdata.skin_controller_index = 0
-        meshdata.bones = GeomLoader.getBones(reader)
-        print(f"Bones: {len(meshdata.bones)}")
         
-        # TGI list at end
-        tgi_count = reader.getUint32()
-        print(f"TGI count: {tgi_count}")
-        meshdata.tgi_list = []
-        for _ in range(tgi_count):
-            meshdata.tgi_list.append(GeomLoader.getTGI(reader))
+        # If we seeked past bones due to overflow, bones will be empty
+        if reader.getOffset() >= absolute_tgi_pos:
+            meshdata.bones = []
+            print(f"Bones: 0 (skipped due to overflow)")
+        else:
+            meshdata.bones = GeomLoader.getBones(reader)
+            print(f"Bones: {len(meshdata.bones)}")
+        
+        # TGI list at end - ensure we're at the right position
+        if reader.getOffset() < absolute_tgi_pos:
+            # Seek to TGI position if we're not there yet
+            reader.setOffset(absolute_tgi_pos)
+        
+        # Only read TGI if we have room left in the file
+        if reader.getOffset() + 4 <= len(reader.data):
+            tgi_count = reader.getUint32()
+            print(f"TGI count: {tgi_count}")
+            meshdata.tgi_list = []
+            for _ in range(tgi_count):
+                if reader.getOffset() + 16 <= len(reader.data):
+                    meshdata.tgi_list.append(GeomLoader.getTGI(reader))
+        else:
+            meshdata.tgi_list = []
+            print(f"TGI count: 0 (end of file)")
 
         print(f"=== END DEBUG ===")
         return meshdata
@@ -306,3 +365,86 @@ class GeomLoader:
             )
 
         return bones
+    
+    # Texture field type hashes
+    TEXTURE_FIELDS = {
+        0x6CC0FD85: 'diffuse',      # DiffuseMap
+        0x6E56548A: 'normal',       # NormalMap
+        0xAD528A60: 'specular',     # SpecularMap
+        0xC3FAAC4F: 'alpha',        # AlphaMap
+        0xF303D152: 'emission',     # EmissionMap
+        0x6E067554: 'selfillum',    # SelfIlluminationMap
+    }
+    
+    # Data types
+    DT_FLOAT = 1
+    DT_INT = 2
+    DT_TEXTURE = 4
+    
+    @staticmethod
+    def parseMTNF(reader: ByteReader, start: int, size: int) -> dict:
+        """
+        Parse MTNF shader data block to extract texture references
+        
+        MTNF format:
+        - "MTNF" magic (4 bytes)
+        - Unknown1 (4 bytes)
+        - Data length (4 bytes) - size of data section after headers
+        - Entry count (4 bytes)
+        - Entry headers (16 bytes each: field, datatype, count, offset)
+        - Data section
+        
+        Returns dict mapping texture type ('diffuse', 'normal', etc.) to TGI index
+        """
+        texture_refs = {}
+        mtnf_start = reader.getOffset()
+        
+        # Read MTNF header
+        mtnf_magic = reader.getString(4)
+        if mtnf_magic != "MTNF" and mtnf_magic != "MTRL":
+            print(f"  Warning: Expected MTNF/MTRL magic, got '{mtnf_magic}'")
+            return texture_refs
+        
+        unknown1 = reader.getUint32()
+        data_length = reader.getUint32()  # Size of data section
+        entry_count = reader.getUint32()  # Number of shader entries
+        
+        print(f"  MTNF entries: {entry_count}, data length: {data_length}")
+        
+        # Sanity check
+        if entry_count > 100 or entry_count < 0:
+            print(f"  Warning: Suspicious entry count {entry_count}, skipping MTNF parse")
+            return texture_refs
+        
+        # Read entry headers (16 bytes each: field, datatype, count, offset)
+        entries = []
+        for i in range(entry_count):
+            field = reader.getUint32()
+            datatype = reader.getUint32()
+            count = reader.getUint32()
+            offset = reader.getUint32()
+            entries.append({
+                'field': field,
+                'datatype': datatype,
+                'count': count,
+                'offset': offset
+            })
+        
+        # Data section starts after all headers
+        # Offset in entries is relative to start of MTNF block
+        data_start = mtnf_start
+        
+        # Process texture entries
+        for entry in entries:
+            if entry['datatype'] == GeomLoader.DT_TEXTURE and entry['count'] == 4:
+                # This is a texture reference (index into TGI list)
+                field_hash = entry['field']
+                if field_hash in GeomLoader.TEXTURE_FIELDS:
+                    tex_type = GeomLoader.TEXTURE_FIELDS[field_hash]
+                    # Read texture index from data section
+                    reader.setOffset(data_start + entry['offset'])
+                    tgi_index = reader.getUint32()
+                    texture_refs[tex_type] = tgi_index
+                    print(f"    Texture {tex_type}: TGI index {tgi_index}")
+        
+        return texture_refs
