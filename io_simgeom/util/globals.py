@@ -41,8 +41,13 @@ class Globals:
     HASHMAP: dict
     SEAM_FIX: dict = {}
 
-    OUTDATED: int
-    ROOTDIR: str
+    # Update checker state
+    OUTDATED: int = 0  # 0 = up to date, 1 = update available, -1 = check failed
+    ROOTDIR: str = ""
+    CURRENT_VERSION: tuple = (0, 0, 0)
+    LATEST_VERSION: tuple = (0, 0, 0)
+    LATEST_VERSION_STR: str = ""
+    UPDATE_URL: str = ""
 
     @staticmethod
     def init(rootdir: str, outdated: int):
