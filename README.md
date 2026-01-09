@@ -2,6 +2,8 @@
 
 A Blender add-on for importing and exporting Sims 4 SimGeom (.simgeom) mesh files.
 
+> **📥 [Download Latest Release](https://github.com/blancodagoat/blender-sims4-geom/releases/latest)** - Click to download the addon zip file
+
 This is a fork of [SmugTomato's Blender Sims 3 GEOM Tools](https://github.com/SmugTomato/blender-sims3-geom), updated to support **The Sims 4** GEOM format.
 
 ## Features
@@ -33,12 +35,13 @@ This is a fork of [SmugTomato's Blender Sims 3 GEOM Tools](https://github.com/Sm
 
 ## Installation
 
-This add-on is installed like any other Blender add-on:
+> ⚠️ **Do NOT clone this repo** - Download the release zip instead!
 
-1. Download the `io_simgeom` folder
-2. In Blender, go to **Edit > Preferences > Add-ons > Install**
-3. Navigate to and select the `io_simgeom` folder (or zip it first)
-4. Enable the add-on by checking the box next to "Sims 4 GEOM Tools"
+1. **[Download the latest release](https://github.com/blancodagoat/blender-sims4-geom/releases/latest)** (`sims4-geom-tools-vX.X.X.zip`)
+2. In Blender, go to **Edit > Preferences > Add-ons**
+3. Click **Install** and select the downloaded zip file
+4. Enable the add-on by checking the box next to "**Import-Export: Sims 4 GEOM Tools**"
+5. Press **N** in the 3D View to open the sidebar - look for the **Sims 4** tab
 
 ## Usage
 

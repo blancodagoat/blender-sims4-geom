@@ -97,7 +97,7 @@ bl_info = {
     "name": "Sims 4 GEOM Tools",
     "author": "blancodagoat",
     "category": "Import-Export",
-    "version": (3, 1, 3),
+    "version": (3, 1, 4),
     "blender": (2, 80, 0),
     "location": "3D View > Sidebar > Sims 4",
     "description": "Importer and exporter for Sims 4 GEOM and Package files"
