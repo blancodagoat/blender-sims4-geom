@@ -26,7 +26,6 @@ import bpy
 from io_simgeom.io.geom_export    import SIMGEOM_OT_export_geom
 from io_simgeom.io.geom_import    import SIMGEOM_OT_import_geom
 from io_simgeom.io.morph_import   import SIMGEOM_OT_import_morph
-from io_simgeom.io.rig_import     import SIMGEOM_OT_import_rig
 from io_simgeom.io.package_import import (
     SIMGEOM_OT_import_package,
     SIMGEOM_OT_select_package_geoms,
@@ -39,8 +38,7 @@ from io_simgeom.ui                import (
     SIMGEOM_PT_utility_panel,
     SIMGEOM_PT_sidebar_panel,
     SIMGEOM_PT_sidebar_textures,
-    SIMGEOM_PT_sidebar_vertex_ids,
-    register_rig_enum
+    SIMGEOM_PT_sidebar_vertex_ids
 )
 from io_simgeom.operators         import *
 
@@ -114,7 +112,6 @@ classes = [
     SIMGEOM_PT_sidebar_vertex_ids,
     SIMGEOM_PT_utility_panel,
     # Operators - Import
-    SIMGEOM_OT_import_rig,
     SIMGEOM_OT_import_geom,
     SIMGEOM_OT_import_package,
     SIMGEOM_OT_select_package_geoms,
@@ -125,11 +122,8 @@ classes = [
     SIMGEOM_OT_batch_export_geom,
     SIMGEOM_OT_generate_lods,
     # Operators - Utility
-    SIMGEOM_OT_import_rig_helper,
     SIMGEOM_OT_reload_textures,
     SIMGEOM_OT_check_updates,
-    SIMGEOM_OT_rebuild_bone_database,
-    SIMGEOM_OT_rename_bone_groups,
     SIMGEOM_OT_reset_id_margin,
     SIMGEOM_OT_recalc_ids,
     SIMGEOM_OT_remove_ids,
@@ -207,9 +201,6 @@ def menu_func_export(self, context):
 
 
 def register():
-    # Register rig type enum
-    register_rig_enum()
-    
     for item in classes:
         bpy.utils.register_class(item)
     bpy.types.TOPBAR_MT_file_import.append(menu_func_import)
@@ -262,7 +253,6 @@ def unregister():
 
     del bpy.types.Object.morph_link
     del bpy.types.Object.morph_name
-    del bpy.types.Scene.simgeom_rig_type
 
 
 if __name__ == "__main__":

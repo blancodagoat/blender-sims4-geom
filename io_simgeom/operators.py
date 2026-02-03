@@ -23,76 +23,7 @@ from bpy_extras.io_utils    import ExportHelper
 from bpy.props              import StringProperty, BoolProperty, EnumProperty
 from bpy.types              import Operator
 
-from io_simgeom.util.fnv        import fnv32
 from io_simgeom.util.globals    import Globals
-
-
-class SIMGEOM_OT_rebuild_bone_database(bpy.types.Operator):
-    """ Rebuild Bonehash Database from bone names in currently selected rig """
-    bl_idname = "simgeom.rebuild_bone_database"
-    bl_label = "Rebuild Bonehash Database"
-    bl_description = "fnv32hash key to string value"
-    bl_options = {"REGISTER"}
-
-    def execute(self, context):
-        ob = context.active_object
-        
-        if not ob:
-            return {"CANCELLED"}
-        if ob.type != 'ARMATURE':
-            return {"CANCELLED"}
-        if not ob.get('__S4_RIG__', 0) and not ob.get('__S3_RIG__', 0):
-            message = f'{ob.name} is not a Sims 4 rig.'
-            self.report({'ERROR'}, message)
-            return {"CANCELLED"}
-
-        
-        bonedict = { hex(fnv32(bone.name)): bone.name for bone in ob.data.bones }
-        Globals.rebuild_fnv_database(bonedict)
-
-        message = f'Rebuilt bonehash database for rig: {ob.name}'
-        self.report({'INFO'}, message)
-
-        return {"FINISHED"}
-
-
-class SIMGEOM_OT_rename_bone_groups(bpy.types.Operator):
-    """ Rename vertex groups from the fnv hash map """
-    bl_idname = "simgeom.rename_bone_groups"
-    bl_label = "Rename vertex groups"
-    bl_description = "Look up bone names in the fnvhash dict"
-    bl_options = {"REGISTER"}
-
-    def execute(self, context):
-        
-        ob = context.active_object
-        
-        if not ob:
-            return {"CANCELLED"}
-        if not ob.get('__S4_GEOM__', 0):
-            message = f'{ob.name} is not a Sims 4 GEOM mesh.'
-            self.report({'ERROR'}, message)
-            return {"CANCELLED"}
-        
-        for group in ob.vertex_groups:
-            if group.name[0:2] == '0x':
-                group.name = Globals.get_bone_name(int(group.name, 0))
-        
-        message = f'Renamed vertex groups for object: {ob.name}'
-        self.report({'INFO'}, message)
-
-        return {"FINISHED"}
-
-
-class SIMGEOM_OT_import_rig_helper(bpy.types.Operator):
-    """Import Rig (From Simgeom Panel)"""
-    bl_idname = "simgeom.import_rig_helper"
-    bl_label = "Import Rig"
-
-    def execute(self, context):
-        rigpath = Globals.ROOTDIR + "/data/rigs/" + context.scene.simgeom_rig_type + ".grannyrig"
-        bpy.ops.simgeom.import_rig(filepath = rigpath)
-        return {'FINISHED'}
 
 
 class SIMGEOM_OT_make_morph(bpy.types.Operator):

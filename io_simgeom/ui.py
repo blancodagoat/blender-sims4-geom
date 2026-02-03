@@ -20,28 +20,6 @@ import bpy
 from io_simgeom.util.globals      import Globals
 
 
-# Sims 4 rigs enum (defined once, used by panels)
-def register_rig_enum():
-    bpy.types.Scene.simgeom_rig_type = bpy.props.EnumProperty(
-        name = "Choose Rig:",
-        description = "Rig to import alongside the mesh",
-        items = [
-            ('yfRig', 'Adult Female', 'yfRig'),
-            ('ymRig', 'Adult Male', 'ymRig'),
-            ('cfRig', 'Child Female', 'cfRig'),
-            ('cmRig', 'Child Male', 'cmRig'),
-            ('puRig', 'Toddler', 'puRig'),
-            ('cuRig', 'Infant', 'cuRig'),
-            ('adRig', 'Dog Adult', 'adRig'),
-            ('alRig', 'Dog Small', 'alRig'),
-            ('cdRig', 'Dog Child', 'cdRig'),
-            ('acRig', 'Cat Adult', 'acRig'),
-            ('ccRig', 'Cat Child', 'ccRig'),
-        ],
-        default = 'yfRig'
-    )
-
-
 class SIMGEOM_PT_sidebar_panel(bpy.types.Panel):
     """Sims 4 GEOM Tools - N-Panel in 3D View"""
     bl_label = "Sims 4 GEOM"
@@ -79,10 +57,6 @@ class SIMGEOM_PT_sidebar_panel(bpy.types.Panel):
         col.separator()
         col.operator("simgeom.import_geom", text="GEOM (.simgeom)", icon='MESH_DATA')
         col.operator("simgeom.import_morph", text="Morph (.simgeom)", icon='MOD_SIMPLEDEFORM')
-        col.separator()
-        row = col.row(align=True)
-        row.operator("simgeom.import_rig_helper", text="Rig", icon='ARMATURE_DATA')
-        row.prop(scene, "simgeom_rig_type", text="")
 
         # Export Section
         box = layout.box()
@@ -95,17 +69,11 @@ class SIMGEOM_PT_sidebar_panel(bpy.types.Panel):
 
         # Tools Section (context-sensitive)
         if obj is not None:
-            if obj.type == 'ARMATURE' and obj.get('__S4_RIG__', 0):
-                box = layout.box()
-                box.label(text="Rig Tools", icon='TOOL_SETTINGS')
-                box.operator("simgeom.rebuild_bone_database", icon='FILE_REFRESH')
-
             if obj.get('__S4_GEOM__', 0):
                 box = layout.box()
                 box.label(text="GEOM Tools", icon='TOOL_SETTINGS')
                 col = box.column(align=True)
                 col.operator("simgeom.generate_lods", text="Generate LODs", icon='MOD_DECIM')
-                col.operator("simgeom.rename_bone_groups", icon='GROUP_BONE')
                 col.operator("simgeom.copy_data", text="Transfer GEOM Data", icon='PASTEFLIPDOWN')
                 col.operator("simgeom.make_morph", icon='MOD_SIMPLEDEFORM')
                 
